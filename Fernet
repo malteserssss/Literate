@@ -1,0 +1,51 @@
+from cryptography.fernet import Fernet
+import os
+
+def encrypt(message, cipher):
+    return cipher.encrypt(message)
+
+def decrypt(encrypted_message, cipher):
+    return cipher.decrypt(encrypted_message)
+
+try:
+    # Check if the key file exists; if not, generate a new key and save it securely
+    key_file = 'encryption_key.key'
+
+    if not os.path.exists(key_file):
+        # Generate a new encryption key if the key file doesn't exist
+        key = Fernet.generate_key()
+        
+        # Save the key securely to a file
+        with open(key_file, 'wb') as key_file_obj:
+            key_file_obj.write(key)
+    else:
+        # Read the key from the file if it exists
+        with open(key_file, 'rb') as key_file_obj:
+            key = key_file_obj.read()
+
+    # Create a Fernet cipher suite using the key
+    cipher_suite = Fernet(key)
+
+    # Example messages to encrypt
+    messages = [
+        b"go home",
+        b"you are not welcome",
+        b"return"
+        # Add more messages for encryption here
+    ]
+
+    # Encrypt the messages and store them in a file
+    with open('encrypted_messages.txt', 'wb') as file:
+        for message in messages:
+            encrypted_message = encrypt(message, cipher_suite)
+            file.write(encrypted_message + b'\n') # Write encrypted message to the file
+
+    # Read encrypted messages from the file and decrypt
+    with open('encrypted_messages.txt', 'rb') as file:
+        for line in file:
+            encrypted_message = line.rstrip() # Read the encrypted message from the file
+            decrypted_message = decrypt(encrypted_message, cipher_suite)
+            print("Decrypted Message:", decrypted_message.decode())
+
+except Exception as e:
+    print(f"An unexpected error occurred: {e}")
