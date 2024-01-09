@@ -8,22 +8,17 @@ def decrypt(encrypted_message, cipher):
     return cipher.decrypt(encrypted_message)
 
 try:
-    # Check if the key file exists; if not, generate a new key and save it securely
     key_file = 'encryption_key.key'
 
     if not os.path.exists(key_file):
-        # Generate a new encryption key if the key file doesn't exist
         key = Fernet.generate_key()
         
-        # Save the key securely to a file
         with open(key_file, 'wb') as key_file_obj:
             key_file_obj.write(key)
     else:
-        # Read the key from the file if it exists
         with open(key_file, 'rb') as key_file_obj:
             key = key_file_obj.read()
 
-    # Create a Fernet cipher suite using the key
     cipher_suite = Fernet(key)
 
     # Example messages to encrypt
