@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import pandas as pd
-import matplotlib.pyplot as pyplot
+import matplotlib.pyplot as plt
 
 
 def get_data(stock_name, period="5y"):
@@ -16,46 +16,51 @@ def add_indicators(data):
 
     def compute_rsi(data, window=14):
         diff = data.diff()
-        up_changes = 0*diff
-        down_changes = 0*diff
-        up_changes[diff > 0] = diff[diff > 0]
-        down_changes[diff < 0] = diff[diff < 0]
+        up_changes = diff.clip(lower=0)
+        down_changes = -diff.clip(upper=0)
         up_changes_average = up_changes.ewm(com=window-1, min_periods=window).mean()
         down_changes_average = down_changes.ewm(com=window-1, min_periods=window).mean()
 
-        return 100 - (100 / (1 + up_changes_average / down_changes_average))
+        rs = up_changes_average / down_changes_average
+        return 100 - (100 / (1 + rs))
 
     def compute_macd(data, short_window=12, long_window=26, signal_window=9):
-        EMA12 = pd.Series(data.ewm(span=short_window, adjust=False).mean())
-        EMA26 = pd.Series(data.ewm(span=long_window, adjust=False).mean())
+        ema12 = data.ewm(span=short_window, adjust=False).mean()
+        ema26 = data.ewm(span=long_window, adjust=False).mean()
 
-        MACD_line = pd.Series(EMA12 - EMA26)
-        Signal_line = pd.Series(MACD_line.ewm(span=signal_window, adjust=False).mean())
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=signal_window, adjust=False).mean()
 
-        return MACD_line - Signal_line
+        return macd_line - signal_line
 
     def compute_bollinger_bands(data, window=20):
         mid_band = data.rolling(window=window).mean()
-        return mid_band + 2*data.rolling(window=window).std()
+        std = data.rolling(window=window).std()
+        upper_band = mid_band + 2 * std
+        lower_band = mid_band - 2 * std
+        return upper_band, lower_band
 
-    data.loc[:, 'RSI'] = compute_rsi(data['Close'])
-    data.loc[:, 'MACD'] = compute_macd(data['Close'])
-    data.loc[:, 'Bollinger_Bands'] = compute_bollinger_bands(data['Close'])
+    data['RSI'] = compute_rsi(data['Close'])
+    data['MACD'] = compute_macd(data['Close'])
+    upper_band, lower_band = compute_bollinger_bands(data['Close'])
+    data['Bollinger_Band_Upper'] = upper_band
+    data['Bollinger_Band_Lower'] = lower_band
     data.dropna(inplace=True)
+
     for feature in ['Close', 'RSI']:
         for N in range(1, 4):
-            data.loc[:, f'{feature}_Lag_{N}'] = data[feature].shift(N)
+            data[f'{feature}_Lag_{N}'] = data[feature].shift(N)
     data.dropna(inplace=True)
 
     return data
 
 
 def split_data(data, target_column, test_size=0.2):
-    features = ['MA_5', 'RSI', 'MACD', 'Bollinger_Bands',
+    features = ['MA_5', 'RSI', 'MACD', 'Bollinger_Band_Upper', 'Bollinger_Band_Lower',
                 'Close_Lag_1', 'RSI_Lag_1', 'Close_Lag_2', 'RSI_Lag_2', 'Close_Lag_3', 'RSI_Lag_3']
     X = data[features]
     y = data[target_column]
-    return train_test_split(X, y, test_size=test_size)
+    return train_test_split(X, y, test_size=test_size, shuffle=False)
 
 
 def train_and_evaluate(X_train, y_train, X_test, y_test):
@@ -67,11 +72,11 @@ def train_and_evaluate(X_train, y_train, X_test, y_test):
     mae = mean_absolute_error(y_test, y_pred)
     print(f"Mean Squared Error: {mse}, Mean Absolute Error: {mae}")
 
-    pyplot.figure(figsize=(10, 6))
-    pyplot.plot(y_test.index, y_test.values, label='Actual')
-    pyplot.plot(y_test.index, y_pred, label='Predicted')
-    pyplot.legend()
-    pyplot.show()
+    plt.figure(figsize=(10, 6))
+    plt.plot(y_test.index, y_test.values, label='Actual')
+    plt.plot(y_test.index, y_pred, label='Predicted')
+    plt.legend()
+    plt.show()
 
 
 def main(stock_name):
