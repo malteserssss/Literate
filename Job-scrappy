@@ -3,77 +3,108 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import csv
 import logging
+import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
+# List of User-Agents to rotate
+user_agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:99.0) Gecko/20100101 Firefox/99.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.3",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36"
+]
 
 def get_date(job_date_text):
     """Extract the date when the job was posted."""
     job_date_text = job_date_text.replace('Added on ', '')
-    if 'Today' in job_date_text:
-        return datetime.now().date()
-    elif 'Yesterday' in job_date_text:
-        return datetime.now().date() - timedelta(1)
-    else:
-        return datetime.strptime(job_date_text, "%d %b").replace(year=datetime.now().year).date()
-
+    try:
+        if 'Today' in job_date_text:
+            return datetime.now().date()
+        elif 'Yesterday' in job_date_text:
+            return datetime.now().date() - timedelta(1)
+        else:
+            return datetime.strptime(job_date_text, "%d %b").replace(year=datetime.now().year).date()
+    except ValueError as e:
+        logging.error(f"Invalid date format ({job_date_text}): {e}")
+        return None
 
 def get_soup(url):
     """Send a GET request and parse the page's content."""
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:99.0) Gecko/20100101 Firefox/99.0"}
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()  # Raise an HTTPError if the HTTP request returned an unsuccessful status code.
-    soup = BeautifulSoup(response.content, "html.parser")
-    return soup
+    headers = {"User-Agent": random.choice(user_agents)}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
+        return BeautifulSoup(response.content, "html.parser")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching webpage: {e}")
+        return None
 
+def extract_job_data(job_post):
+    """Extract data from a job post element."""
+    job = {}
+    
+    if 'foreign' not in job_post.get("class", []):
+        job_title = job_post.find("h2")
+        if job_title:
+            job["job_title"] = job_title.text.strip()
+        else:
+            logging.error("No job title found.")
+            return None
+        
+        job_date_element = job_post.find("time")
+        if job_date_element:
+            job_date_text = job_date_element.text
+            job_date = get_date(job_date_text)
+            if job_date and job_date >= datetime.now().date() - timedelta(7):
+                job["job_date"] = job_date
+            else:
+                logging.info(f"Skipping old job: {job['job_title']}")
+                return None
+        else:
+            logging.error("No job date found.")
+            return None
+    return job
 
 def get_jobs(soup):
     """Extract the job posts on the page."""
-    job_posts = soup.find_all('article', class_='job-post job-normal-post')
+    if soup is None:
+        return []
+    
+    job_posts = soup.find_all('article')
+    if not job_posts:
+        logging.error("No job posts found.")
+        return []
 
     jobs = []
     for job_post in job_posts:
-        job = {}
-
-        # If there is no 'foreign' in class, job is local
-        if 'foreign' not in job_post["class"]:
-            job_title = job_post.find("h2").text.strip()
-
-            job_date_text = job_post.find("time", class_="jsx-3049076512").text
-            job_date = get_date(job_date_text)
-
-            # Skip to next job post if this job is older than 1 week
-            if job_date < datetime.now().date() - timedelta(7):
-                continue
-
-            job["job_title"] = job_title
-            job["job_date"] = job_date
-
+        job = extract_job_data(job_post)
+        if job:
             jobs.append(job)
 
     return jobs
 
-
 def write_to_csv(jobs):
     """Write the jobs to a CSV file."""
-    # Make sure there's at least one job before writing to CSV.
     if jobs:
         keys = jobs[0].keys()
-        with open('jobs.csv', 'w', newline='', encoding='utf-8') as output_file:
-            dict_writer = csv.DictWriter(output_file, keys)
-            dict_writer.writeheader()
-            dict_writer.writerows(jobs)
+        try:
+            with open('jobs.csv', 'w', newline='', encoding='utf-8') as output_file:
+                dict_writer = csv.DictWriter(output_file, keys)
+                dict_writer.writeheader()
+                dict_writer.writerows(jobs)
+        except IOError as e:
+            logging.error(f"Error writing to CSV file: {e}")
     else:
-        logging.info("No jobs found.")
-
+        logging.info("No jobs found to write to CSV.")
 
 def jobs_scraper():
     """Scrap the website and gather the job posts."""
     url = 'https://www.bestjobs.eu/ro/locuri-de-munca?keyword=IT&location=Bucharest'
     soup = get_soup(url)
-    jobs = get_jobs(soup)
-    write_to_csv(jobs)
+    if soup:
+        jobs = get_jobs(soup)
+        write_to_csv(jobs)
 
-
-jobs_scraper()
+if __name__ == "__main__":
+    jobs_scraper()
