@@ -1,0 +1,180 @@
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import datetime
+import logging
+
+
+class Product:
+    def __init__(self, id, name, quantity, price):
+        self.id = id
+        self.name = name
+        self.quantity = quantity
+        self.price = price
+
+
+class Transaction:
+    def __init__(self, product, action, quantity):
+        self.product = product
+        self.action = action
+        self.quantity = quantity
+        self.date = datetime.datetime.now()
+
+    def __str__(self):
+        return "Transaction: {} {} of {} on {}".format(self.action, self.quantity, self.product.name, self.date)
+
+
+class Inventory:
+    def __init__(self):
+        self.products = []
+        self.transactions = []
+        self.id_count = 1  # Initialize product ID counter
+
+    def display_product_info(self, product, root):
+        dialog = tk.Toplevel(root)
+        dialog.title('Product Information')
+
+        tk.Label(dialog, text=f"Product ID: {product.id}").pack()
+        tk.Label(dialog, text=f"Product Name: {product.name}").pack()
+        tk.Label(dialog, text=f"Quantity: {product.quantity}").pack()
+        tk.Label(dialog, text=f"Price: ${product.price:.2f}").pack()
+
+    def add_product(self, product):
+        product.id = self.id_count  # Assign product ID
+        self.products.append(product)
+        self.transactions.append(Transaction(product, "add", product.quantity))
+        self.id_count += 1  # Increment ID counter
+        logging.info(f'Product added: {product.name} with ID: {product.id}, quantity: {product.quantity}')
+
+    def remove_product(self, product_index):
+        product = self.products.pop(product_index)
+        self.transactions.append(Transaction(product, "remove", product.quantity))
+        logging.warning(f'Product removed: {product.name} with ID: {product.id}')
+
+    def update_product_quantity(self, product_index, new_quantity):
+        product = self.products[product_index]
+        action = "increase" if new_quantity > product.quantity else "decrease"
+        transaction = Transaction(product, action, abs(new_quantity - product.quantity))
+        product.quantity = new_quantity
+        self.transactions.append(transaction)
+        logging.info(f'Product quantity updated: {product.name} with ID: {product.id}, new quantity: {new_quantity}')
+
+    def calculate_total_value(self):
+        total_value = sum(product.quantity * product.price for product in self.products)
+        return total_value
+
+    def get_product(self, index):
+        return self.products[index]
+
+    def get_number_of_products(self):
+        return len(self.products)
+
+
+class InventoryApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Inventory Management System")
+        self.inventory = Inventory()  # Create an instance of Inventory
+        self.create_ui()
+
+    def create_ui(self):
+        self.product_listbox = tk.Listbox(self.root)
+        self.product_listbox.pack()
+
+        add_button = tk.Button(self.root, text="Add Product", command=self.add_product)
+        add_button.pack()
+
+        remove_button = tk.Button(self.root, text="Remove Product", command=self.remove_product)
+        remove_button.pack()
+
+        update_button = tk.Button(self.root, text="Update Quantity", command=self.update_quantity)
+        update_button.pack()
+
+        total_button = tk.Button(self.root, text="Calculate Total Value", command=self.calculate_total_value)
+        total_button.pack()
+
+        view_button = tk.Button(self.root, text="View Product Info", command=self.view_product_info)
+        view_button.pack()
+
+        self.search_var = tk.StringVar()
+        self.search_var.trace('w', self.update_list)  # Trace the changes in entry widget
+        search_bar = tk.Entry(self.root, textvariable=self.search_var)
+        search_bar.pack()
+
+        self.all_items = [product.name for product in
+                          self.inventory.products]  # All product names, you may need to update this
+        # list whenever a new product is added/deleted
+
+    def view_product_info(self):
+        selected_index = self.product_listbox.curselection()
+        if selected_index:
+            index = selected_index[0]
+            product = self.inventory.get_product(index)
+            self.inventory.display_product_info(product, self.root)
+
+    def add_product(self):
+        name = simpledialog.askstring("Add Product", "Enter product name:")
+        if name:
+            quantity = simpledialog.askinteger("Add Product", "Enter quantity:")
+            if quantity is not None:
+                price = simpledialog.askfloat("Add Product", "Enter price:")
+                if price is not None:
+                    product = Product(0, name, quantity, price)  # ID will be assigned by Inventory
+                    self.inventory.add_product(product)
+                    self.product_listbox.insert(tk.END, product.name)
+
+    def remove_product(self):
+        selected_index = self.product_listbox.curselection()
+        if selected_index:
+            index = selected_index[0]
+            self.inventory.remove_product(index)
+            self.product_listbox.delete(index)
+            messagebox.showinfo("Product Removed", f"Product removed from inventory.")
+
+    def update_quantity(self):
+        selected_index = self.product_listbox.curselection()
+        if selected_index:
+            index = selected_index[0]
+            product = self.inventory.get_product(index)
+            new_quantity = simpledialog.askinteger("Update Quantity", f"Enter new quantity for {product.name}:")
+            if new_quantity is not None:
+                self.inventory.update_product_quantity(index, new_quantity)
+                messagebox.showinfo("Quantity Updated", f"Quantity updated for '{product.name}'.")
+
+    def calculate_total_value(self):
+        total_value = self.inventory.calculate_total_value()
+        messagebox.showinfo("Total Value", f"Total inventory value: ${total_value:.2f}")
+
+    def setup_logging(self):
+        logging.basicConfig(
+            filename='product_updates.log',
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%m/%d/%Y %I:%M:%S %p'
+        )
+
+    def update_list(self, *args):
+        search_term = self.search_var.get()
+
+        # Filter the products based on the search term
+        filtered_products = [product for product in self.inventory.products if
+                             search_term.lower() in product.name.lower()]
+
+        # Clear the current listbox content
+        self.product_listbox.delete(0, tk.END)
+
+        # Insert the filtered products into the listbox
+        for product in filtered_products:
+            self.product_listbox.insert(tk.END, product.name)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        filename='product_updates.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%m/%d/%Y %I:%M:%S %p'
+    )
+
+    root = tk.Tk()
+    app = InventoryApp(root)
+    root.mainloop()
